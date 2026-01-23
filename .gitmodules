@@ -1,3 +1,15 @@
 [submodule "submodules/RadarToolkit"]
 	path = submodules/RadarToolkit
 	url = git@10.31.1.1:UNB/RadarToolKit.git
+[submodule "Adafruit-Qualia-S3-RGB666-PCB"]
+	path = Adafruit-Qualia-S3-RGB666-PCB
+	url = https://github.com/adafruit/Adafruit-Qualia-S3-RGB666-PCB.git
+[submodule "submodules/Conv-CondCtrl"]
+	path = submodules/Conv-CondCtrl
+	url = ../../Tiles/Conv-CondCtrl
+[submodule "submodules/ADC-ADS122"]
+	path = submodules/ADC-ADS122
+	url = ../../Tiles/ADC-ADS122
+[submodule "submodules/DAC-AD569x"]
+	path = submodules/DAC-AD569x
+	url = ../../Tiles/DAC-AD569x
