@@ -123,12 +123,34 @@ def root(display,data):
         )
         line += lineStep
         rootWindow.append(ChLabel)
+    if data['ADC4']:
+        ChLabel = label.Label (
+            font=terminalio.FONT,
+            text = "ADC4: %1.6fV" % (float(data['ADC4'])),
+            color = 0xFFFFFF,
+            background_color= 0x654321,
+            background_tight=True,
+            anchor_point = (0.5,0.0),
+            anchored_position = (int(display.display.width / 2),line),
+            scale = 3,
+        )
+        line += lineStep
+        rootWindow.append(ChLabel)
     display.splash.append(rootWindow)
     display.display.refresh()
     display.splash.remove(rootWindow)
 
+def is_number(s):
+    try:
+        float(s)  # Try converting to a float
+        return True
+    except ValueError:
+        return False
+
 import board
 import busio
+from supervisor import reload
+import digitalio
 import scpi
 from ads122 import ads122c04
 from ad569x import ad5696
@@ -143,9 +165,27 @@ i2c = display.i2c_bus
 
 adc1 = ads122c04(i2c,68)
 adc2 = ads122c04(i2c,69)
+dac1 = ad5696(i2c,14)
+dac2 = ad5696(i2c,15)
 
-print("Mid range:",adc1.getADC(14)*1.2207e-07)
-print("Mid range:",adc2.getADC(14)*1.2207e-07)
+pinA0 = digitalio.DigitalInOut(board.A0)
+pinA0 = digitalio.Direction.OUTPUT
+
+pinA1 = digitalio.DigitalInOut(board.A1)
+pinA1 = digitalio.Direction.OUTPUT
+
+pinA0 = True   # TMOD
+pinA1 = True  # LD Driver Enable
+
+
+
+
+dac1.setDAC([4],[int((1.024 / 2.5) * 2**16)]) # Default to mid range 0V out on TMOD
+
+dac1.calMin = -3.0155     # Measured value at MinLimit
+dac1.calMax = +2.986      # Measured value at MaxLimit
+dac1.calMinLimit = 0.0    # Minimum allowed Value RAW DAC
+dac1.calMaxLimit = 2.048  # Maximum allowed value RAW DAC
 
 commands = scpi.console()
 done = False
@@ -157,22 +197,19 @@ while not done:
     data['ADC1'] = adc1.getVolt(9)
     data['ADC2'] = adc1.getVolt(10)
     data['ADC3'] = adc1.getVolt(11)
-    data['ADC4'] = adc1.getVolt(8)
-    data['ADC5'] = adc1.getVolt(9)
-    data['ADC6'] = adc1.getVolt(10)
-    data['ADC7'] = adc1.getVolt(11)
+    data['ADC4'] = adc2.getVolt(8)
+    data['ADC5'] = adc2.getVolt(9)
+    data['ADC6'] = adc2.getVolt(10)
+    data['ADC7'] = adc2.getVolt(11)
     root(display,data)
     commands.checkStream()
     command = commands.nextCommand().upper()
-    commandValid = False
     if command != '':
         # Standard SCPI commands
         if command[0] == '*':
             if command == '*IDN?':
-                commandValid = True
                 print("Laser Monitor V0.1")
             if command == '*OPT?':
-                commandValid = True
                 i2c.try_lock()
                 i2cbus = i2c.scan()
                 print("Option ",i2cbus)
@@ -188,19 +225,18 @@ while not done:
                     if unknown:
                         print(dev,"Unknown device")
             if command == '*RST':
-                commandValid = True
                 done = True
         # Equipment specific commands
         ecommand = command.split(':')
-        if len(ecommand[0])>3:
-            if ecommand[0][:4] == "TEMP":
-                commandValid = True
+        argv = []
+        if len(ecommand[len(ecommand)-1].split(' ')) > 1:
+            argv = ecommand[len(ecommand)-1].split(' ')[1:]
+        if len(ecommand[0])>2:
+            if ecommand[0][:4] == "TEM":
                 temp1 = adc1.getTemp()
                 temp2 = adc2.getTemp()
                 print(" %3.2fC %3.2fC" % (temp1,temp2))
-            if ecommand[0][:4] == "VOLT":
-                commandValid = True
-                command = ecommand[0].split(' ')
+            if ecommand[0][:4] == "VOL":
                 if len(command) == 1:
                     print("%1.6fV " % adc1.getVolt(8),end="")
                     print("%1.6fV " % adc1.getVolt(9),end="")
@@ -210,9 +246,7 @@ while not done:
                     print("%1.6fV " % adc2.getVolt(9),end="")
                     print("%1.6fV " % adc2.getVolt(10),end="")
                     print("%1.6fV " % adc2.getVolt(11),end="")
-            if ecommand[0][:4] == "ADCR": #ADC Raw
-                commandValid = True
-                command = ecommand[0].split(' ')
+            if ecommand[0][:4] == "ADC": #ADC Raw
                 if len(command) == 1:
                     print("%06X " % adc1.getADC(8),end="")
                     print("%06X " % adc1.getADC(9),end="")
@@ -222,5 +256,55 @@ while not done:
                     print("%06X " % adc2.getADC(9),end="")
                     print("%06X " % adc2.getADC(10),end="")
                     print("%06X " % adc2.getADC(11),end="")
-print("Done")
+            
+            if ecommand[0][:3] == "ADC":
+                if len(ecommand) >=2:
+                    if len(ecommand) >=3:
+                        if ecommand[2][:3] == "VOL":
+                            if len(argv) >= 1:
+                                print("TODO ADC:GET:VOLT")
+                    else:
+                        if ecommand[1][:3] == "GET":
+                            if len(argv) >= 1:
+                                print("TODO ADC:GET") 
 
+            if ecommand[0][:3] == "DAC":
+                if len(ecommand) >=2:
+                    if ecommand[1][:3] == "GET":
+                        print("----DAC:GET",ecommand)
+                        if len(ecommand) >=3:
+                            if ecommand[2][:3] == "VOL":
+                                print("VOLT")
+                                if len(argv) == 1:
+                                    if argv[0].isdigit():
+                                        print(adc2.getVolt(8+int(argv[0])))
+                        else:
+                            if len(argv) == 1:
+                                if argv[0].isdigit():
+                                    print(adc2.getADC(8+int(argv[0])))
+                        if ecommand[1][:3] == "SET":
+                            if len(argv) == 2:
+                                if argv[0].isdigit and is_number(argv[1]):
+                                    dac1.setDAC(int(argv[0]),int(argv[1])) 
+            if ecommand[0][:4] == "TMO": 
+                dVdV = (dac1.calMaxLimit - dac1.calMinLimit)  / (dac1.calMax-dac1.calMin)
+                if len(ecommand) >= 2:
+                    if ecommand[1][:3] == "GET":
+                        print(adc2.getADC(8) )
+                    if ecommand[1][:3] == "SET":
+                        if len(argv) == 1:
+                            if is_number(argv[0]):
+                                value = (dac1.calMaxLimit - dac1.calMinLimit)  / (dac1.calMax-dac1.calMin) * (float(argv[0]) - dac1.calMin)
+                                if value >dac1.calMaxLimit:
+                                    value = dac1.calMaxLimit
+                                    print(value)
+                                if value <dac1.calMinLimit:
+                                    value = dac1.calMinLimit
+                                    print(value)
+                                dac1.setDAC([4],[int((value / dac1.reference) * 2**16)]) # Default to mid range 0V out on TMOD
+                            else:
+                                print("Usage: TMOD VALUE, Value was not numeric")
+                        else:
+                            print("Usage: TMOD VALUE")
+print("Done")
+reload()
